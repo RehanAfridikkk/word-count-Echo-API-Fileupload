@@ -1,37 +1,38 @@
 package cmd
 
 import (
+	"bytes"
 	"fmt"
-
+	"io"
 	"mime/multipart"
 	"time"
 
-	"github.com/RehanAfridikkk/word-count-Echo-API/pkg"
+	"github.com/RehanAfridikkk/word-count-Echo-API-fileupload/pkg"
 )
 
-func ProcessFile(fileHeader *multipart.FileHeader, routines int) (pkg.CountsResult, int, time.Duration ,error) {
+func ProcessFile(file multipart.File, routines int) (pkg.CountsResult, int, time.Duration, error) {
 	start := time.Now()
-	results := make(chan pkg.CountsResult, routines)
 
-	// Open the uploaded file
-	file, err := fileHeader.Open()
+
+	var buf bytes.Buffer
+	_, err := io.Copy(&buf, file)
 	if err != nil {
 		return pkg.CountsResult{}, 0, 0, err
 	}
-	defer file.Close()
 
-	// Calculate the size of the file
-	fileSize := int64(fileHeader.Size)
+	fileContent := buf.Bytes()
 
-	chunkSize := fileSize / int64(routines)
+	chunkSize := len(fileContent) / routines
+	results := make(chan pkg.CountsResult, routines)
 
 	for i := 0; i < routines; i++ {
-		chunk := make([]byte, chunkSize)
-		_, err := file.Read(chunk)
-		if err != nil {
-			return pkg.CountsResult{}, 0, 0, err
+		startIndex := i * chunkSize
+		endIndex := (i + 1) * chunkSize
+		if i == routines-1 {
+			endIndex = len(fileContent)
 		}
 
+		chunk := fileContent[startIndex:endIndex]
 		go pkg.Counts(chunk, results)
 	}
 
@@ -46,6 +47,7 @@ func ProcessFile(fileHeader *multipart.FileHeader, routines int) (pkg.CountsResu
 	}
 
 	runTime := time.Since(start)
+
 	fmt.Println("Number of lines:", totalCounts.LineCount)
 	fmt.Println("Number of words:", totalCounts.WordsCount)
 	fmt.Println("Number of vowels:", totalCounts.VowelsCount)
